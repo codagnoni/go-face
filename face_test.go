@@ -228,6 +228,17 @@ func TestClassifyThreshold(t *testing.T) {
 	}
 }
 
+func TestPngLoad(t *testing.T) {
+	faces, err := rec.RecognizeFile(getTPath("pristin.png"))
+	if err != nil {
+		t.Fatalf("Can't load png: %v", err)
+	}
+	numFaces := len(faces)
+	if numFaces != 10 {
+		t.Fatalf("Wrong number of faces: %d", numFaces)
+	}
+}
+
 func TestClose(t *testing.T) {
 	rec.Close()
 }
