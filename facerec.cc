@@ -1,10 +1,10 @@
 #include <shared_mutex>
 #include <dlib/dnn.h>
-#include <dlib/image_loader/image_loader.h>
+#include <dlib/image_loader/jpeg_loader.h>
+#include <dlib/image_loader/png_loader.h>
 #include <dlib/image_processing/frontal_face_detector.h>
 #include <dlib/graph_utils.h>
 #include "facerec.h"
-#include "jpeg_mem_loader.h"
 #include "classify.h"
 
 using namespace dlib;
@@ -168,6 +168,25 @@ void facerec_config(facerec* rec, unsigned long size, double padding, int jitter
 	cls->Config(size,padding,jittering);
 }
 
+int get_image_type(const uint8_t *img_data) {
+	if (!img_data)
+		return IMAGE_TYPE_UNKNOWN;
+
+	if (img_data[0] == 0xff && img_data[1] == 0xd8)
+	{
+		return IMAGE_TYPE_JPEG;
+	}
+
+	if (img_data[0] == 0x89 && img_data[1] == 0x50 && img_data[2] == 0x4E
+		 && img_data[3] == 0x47 && img_data[4] == 0x0D && img_data[5] == 0x0A
+		 && img_data[6] == 0x1A && img_data[7] == 0x0A)
+	{
+		return IMAGE_TYPE_PNG;
+	}
+
+	return IMAGE_TYPE_UNKNOWN;
+}
+
 faceret* facerec_recognize(facerec* rec, const uint8_t* img_data, int len, int max_faces,int type) {
 	faceret* ret = (faceret*)calloc(1, sizeof(faceret));
 	FaceRec* cls = (FaceRec*)(rec->cls);
@@ -177,8 +196,25 @@ faceret* facerec_recognize(facerec* rec, const uint8_t* img_data, int len, int m
 	std::vector<full_object_detection> shapes;
 
 	try {
-		// TODO(Kagami): Support more file types?
-		load_mem_jpeg(img, img_data, len);
+		switch (get_image_type(img_data))
+		{
+			case IMAGE_TYPE_JPEG:
+			{
+				dlib::jpeg_loader jpgLoader(img_data, len);
+				jpgLoader.get_image(img);
+			}
+			break;
+			case IMAGE_TYPE_PNG:
+			{
+				dlib::png_loader pngLoader(img_data, len);
+				pngLoader.get_image(img);
+			}
+			break;
+			default:
+				throw image_load_error("Invalid image type");
+				break;
+		}
+
 		std::tie(rects, descrs, shapes) = cls->Recognize(img, max_faces,type);
 	} catch(image_load_error& e) {
 		ret->err_str = strdup(e.what());

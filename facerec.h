@@ -10,6 +10,12 @@ typedef enum {
 	UNKNOWN_ERROR,
 } err_code;
 
+typedef enum {
+	IMAGE_TYPE_UNKNOWN,
+	IMAGE_TYPE_JPEG,
+	IMAGE_TYPE_PNG,
+};
+
 typedef struct facerec {
 	void* cls;
 	const char* err_str;
