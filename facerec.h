@@ -14,7 +14,7 @@ typedef enum {
 	IMAGE_TYPE_UNKNOWN,
 	IMAGE_TYPE_JPEG,
 	IMAGE_TYPE_PNG,
-};
+} image_type;
 
 typedef struct facerec {
 	void* cls;
