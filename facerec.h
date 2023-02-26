@@ -5,7 +5,7 @@ extern "C" {
 #endif
 
 typedef enum {
-	IMAGE_LOAD_ERROR,
+	IMAGE_LOAD_ERROR = 1,
 	SERIALIZATION_ERROR,
 	UNKNOWN_ERROR,
 } err_code;

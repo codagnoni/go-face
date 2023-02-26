@@ -3,11 +3,13 @@
 #include <dlib/image_loader/jpeg_loader.h>
 #include <dlib/image_loader/png_loader.h>
 #include <dlib/image_processing/frontal_face_detector.h>
+#include <dlib/image_transforms.h>
 #include <dlib/graph_utils.h>
 #include "facerec.h"
-#include "classify.h"
 
 using namespace dlib;
+
+typedef matrix<float,0,1> descriptor;
 
 template <template <int,template<typename>class,int,typename> class block, int N, template<typename>class BN, typename SUBNET>
 using residual = add_prev1<block<N,BN,1,tag1<SUBNET>>>;
@@ -65,11 +67,9 @@ public:
 		std::string dir = model_dir;
 		std::string shape_predictor_path = dir + "/shape_predictor_5_face_landmarks.dat";
 		std::string resnet_path = dir + "/dlib_face_recognition_resnet_model_v1.dat";
-		std::string cnn_resnet_path = dir + "/mmod_human_face_detector.dat";
 
 		deserialize(shape_predictor_path) >> sp_;
 		deserialize(resnet_path) >> net_;
-		deserialize(cnn_resnet_path) >> cnn_net_;
 
 		jittering = 0;
 		size = 150;
@@ -81,16 +81,19 @@ public:
 		std::vector<rectangle> rects;
 		std::vector<descriptor> descrs;
 		std::vector<full_object_detection> shapes;
+		matrix<rgb_pixel> img_small;
+		bool img_resized = false;
 
-		if(type == 0) {
+
+		if (num_rows(img) > 800) {
+			img_small.set_size(img.nr()/4,img.nc()/4);
+			resize_image(img, img_small, interpolate_nearest_neighbor());
+			std::lock_guard<std::mutex> lock(detector_mutex_);
+			rects = detector_(img_small);
+			img_resized = true;
+		} else {
 			std::lock_guard<std::mutex> lock(detector_mutex_);
 			rects = detector_(img);
-		} else{
-			std::lock_guard<std::mutex> lock(cnn_net_mutex_);
-			auto dets = cnn_net_(img);
-            for (auto&& d : dets) {
-                rects.push_back(d.rect);
-            }
 		}
 
 		// Short circuit.
@@ -100,7 +103,14 @@ public:
 		std::sort(rects.begin(), rects.end());
 
 		for (const auto& rect : rects) {
-			auto shape = sp_(img, rect);
+			full_object_detection shape;
+			if (img_resized) {
+				rectangle new_rect = scale_rect(rect,4);
+				shape = sp_(img, new_rect);
+			} else {
+				shape = sp_(img, rect);
+			}
+
 			shapes.push_back(shape);
 			matrix<rgb_pixel> face_chip;
 			extract_image_chip(img, get_face_chip_details(shape, size, padding), face_chip);
@@ -123,7 +133,7 @@ public:
 
 	int Classify(const descriptor& test_sample, float tolerance) {
 		std::shared_lock<std::shared_mutex> lock(samples_mutex_);
-		return classify(samples_, cats_, test_sample, tolerance);
+		return 0;
 	}
 
     void Config(unsigned long new_size, double new_padding, int new_jittering) {
@@ -134,12 +144,10 @@ public:
 private:
 	std::mutex detector_mutex_;
 	std::mutex net_mutex_;
-	std::mutex cnn_net_mutex_;
 	std::shared_mutex samples_mutex_;
 	frontal_face_detector detector_;
 	shape_predictor sp_;
 	anet_type net_;
-	cnn_anet_type cnn_net_;
 	std::vector<descriptor> samples_;
 	std::vector<int> cats_;
 	int jittering;
@@ -176,14 +184,12 @@ int get_image_type(const uint8_t *img_data) {
 	{
 		return IMAGE_TYPE_JPEG;
 	}
-
 	if (img_data[0] == 0x89 && img_data[1] == 0x50 && img_data[2] == 0x4E
 		 && img_data[3] == 0x47 && img_data[4] == 0x0D && img_data[5] == 0x0A
 		 && img_data[6] == 0x1A && img_data[7] == 0x0A)
 	{
 		return IMAGE_TYPE_PNG;
 	}
-
 	return IMAGE_TYPE_UNKNOWN;
 }
 
@@ -212,7 +218,6 @@ faceret* facerec_recognize(facerec* rec, const uint8_t* img_data, int len, int m
 			break;
 			default:
 				throw image_load_error("Invalid image type");
-				break;
 		}
 
 		std::tie(rects, descrs, shapes) = cls->Recognize(img, max_faces,type);
