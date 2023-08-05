@@ -5,7 +5,6 @@
 #include <dlib/image_processing/frontal_face_detector.h>
 #include <dlib/image_transforms.h>
 #include <dlib/graph_utils.h>
-#include <dlib/opencv.h>
 #include <dlib/image_saver/save_jpeg.h>
 #include <math.h>
 #include "facerec.h"
