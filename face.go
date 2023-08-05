@@ -1,17 +1,22 @@
 package face
 
 // #cgo CXXFLAGS: -std=c++1z -Wall -O3 -DNDEBUG -march=native
-// #cgo LDFLAGS: -ldlib -lblas -lcblas -llapack -ljpeg
+// #cgo LDFLAGS: -ldlib -lblas -lcblas -llapack -ljpeg -lopencv_core -lopencv_imgcodecs -lopencv_imgproc
 // #include <stdlib.h>
 // #include <stdint.h>
 // #include "facerec.h"
 import "C"
 import (
+	"bytes"
 	"image"
+	"io"
 	"io/ioutil"
+	"log"
 	"math"
 	"os"
 	"unsafe"
+
+	"github.com/xiam/exif"
 )
 
 const (
@@ -90,6 +95,43 @@ func NewRecognizerWithConfig(modelDir string, size int, padding float32, jitteri
 	return
 }
 
+var exifOrientationToRotationMap = map[string]int{
+	"Top-left":     0,
+	"Top-right":    0,
+	"Bottom-right": -180,
+	"Bottom-left":  -180,
+	"Left-top":     -90,
+	"Right-top":    -90,
+	"Right-bottom": 90,
+	"Left-bottom":  90,
+}
+
+func getImageOrientationFromExif(imgData []byte) int {
+	reader := exif.New()
+	imgReader := bytes.NewReader(imgData)
+	_, err := io.Copy(reader, imgReader)
+
+	// exif.FoundExifInData is a signal that the EXIF parser has all it needs,
+	// it doesn't need to be given the whole image.
+	if err != nil && err != exif.ErrFoundExifInData {
+		log.Printf("Error loading bytes: %s\n", err.Error())
+	}
+
+	err = reader.Parse()
+
+	if err != nil {
+		log.Printf("Error parsing EXIF: %s\n", err.Error())
+	}
+
+	rotation := 0
+	if exifOrientation, ok := reader.Tags["Orientation"]; ok {
+		log.Printf("Orientation=%s\n", exifOrientation)
+		rotation = exifOrientationToRotationMap[exifOrientation]
+	}
+
+	return rotation
+}
+
 func (rec *Recognizer) recognize(type_ int, imgData []byte, maxFaces int) (faces []Face, err error) {
 	if len(imgData) == 0 {
 		err = ImageLoadError("Empty image")
@@ -98,12 +140,14 @@ func (rec *Recognizer) recognize(type_ int, imgData []byte, maxFaces int) (faces
 	if maxFaces > maxFaceLimit {
 		maxFaces = maxFaceLimit
 	}
+
 	cImgData := (*C.uint8_t)(&imgData[0])
 	cLen := C.int(len(imgData))
 	cMaxFaces := C.int(maxFaces)
 	cType := C.int(type_)
+	cRotation := C.int(getImageOrientationFromExif(imgData))
 
-	ret := C.facerec_recognize(rec.ptr, cImgData, cLen, cMaxFaces, cType)
+	ret := C.facerec_recognize(rec.ptr, cImgData, cLen, cMaxFaces, cType, cRotation)
 	defer C.free(unsafe.Pointer(ret))
 
 	if ret.err_str != nil {

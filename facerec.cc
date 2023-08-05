@@ -5,6 +5,9 @@
 #include <dlib/image_processing/frontal_face_detector.h>
 #include <dlib/image_transforms.h>
 #include <dlib/graph_utils.h>
+#include <dlib/opencv.h>
+#include <dlib/image_saver/save_jpeg.h>
+#include <math.h>
 #include "facerec.h"
 
 using namespace dlib;
@@ -193,7 +196,7 @@ int get_image_type(const uint8_t *img_data) {
 	return IMAGE_TYPE_UNKNOWN;
 }
 
-faceret* facerec_recognize(facerec* rec, const uint8_t* img_data, int len, int max_faces,int type) {
+faceret* facerec_recognize(facerec* rec, const uint8_t* img_data, int len, int max_faces,int type, int rotation) {
 	faceret* ret = (faceret*)calloc(1, sizeof(faceret));
 	FaceRec* cls = (FaceRec*)(rec->cls);
 	matrix<rgb_pixel> img;
@@ -206,8 +209,12 @@ faceret* facerec_recognize(facerec* rec, const uint8_t* img_data, int len, int m
 		{
 			case IMAGE_TYPE_JPEG:
 			{
-				dlib::jpeg_loader jpgLoader(img_data, len);
-				jpgLoader.get_image(img);
+				try {
+					dlib::jpeg_loader jpgLoader(img_data, len);
+					jpgLoader.get_image(img);
+				} catch (...) {
+					std::cout << "Exception loading jpg" << std::endl;
+				}
 			}
 			break;
 			case IMAGE_TYPE_PNG:
@@ -220,7 +227,9 @@ faceret* facerec_recognize(facerec* rec, const uint8_t* img_data, int len, int m
 				throw image_load_error("Invalid image type");
 		}
 
-		std::tie(rects, descrs, shapes) = cls->Recognize(img, max_faces,type);
+		matrix<rgb_pixel> imgRotated;
+		rotate_image (img, imgRotated, rotation * (M_PI / 180.0f), interpolate_bilinear());
+		std::tie(rects, descrs, shapes) = cls->Recognize(imgRotated, max_faces,type);
 	} catch(image_load_error& e) {
 		ret->err_str = strdup(e.what());
 		ret->err_code = IMAGE_LOAD_ERROR;
