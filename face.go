@@ -1,7 +1,7 @@
 package face
 
-// #cgo CXXFLAGS: -std=c++1z -Wall -O3 -DNDEBUG -march=native
-// #cgo LDFLAGS: -ldlib -lblas -lcblas -llapack -ljpeg
+// #cgo CXXFLAGS: -std=c++17 -Wall -O3 -DNDEBUG -march=native -I/usr/include/opencv4 -I/ncnn/build/install/include/ncnn
+// #cgo LDFLAGS: -ldlib -lblas -lcblas -llapack -ljpeg -lncnn -lopencv_core -lopencv_imgcodecs -lopencv_imgproc -liomp5 -L/ncnn/build/install/lib
 // #include <stdlib.h>
 // #include <stdint.h>
 // #include "facerec.h"

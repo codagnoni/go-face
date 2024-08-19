@@ -6,8 +6,11 @@
 #include <dlib/image_transforms.h>
 #include <dlib/graph_utils.h>
 #include <dlib/image_saver/save_jpeg.h>
+#include "dlib/opencv/to_open_cv.h"
 #include <math.h>
+#include "opencv2/imgcodecs.hpp"
 #include "facerec.h"
+#include "fdtct.h"
 
 using namespace dlib;
 
@@ -76,6 +79,11 @@ public:
 		jittering = 0;
 		size = 150;
 		padding = 0.25;
+
+		faceDet_ = new FaceDtct();
+	}
+
+	FaceDtct *getFaceDet() { return faceDet_; }
 	}
 
 	std::tuple<std::vector<rectangle>, std::vector<descriptor>, std::vector<full_object_detection>>
@@ -83,19 +91,14 @@ public:
 		std::vector<rectangle> rects;
 		std::vector<descriptor> descrs;
 		std::vector<full_object_detection> shapes;
-		matrix<rgb_pixel> img_small;
-		bool img_resized = false;
 
+		// New face detector
+		std::vector<Object> objects;
+		matrix<rgb_pixel> newImg = img;
+		faceDet_->detect(dlib::toMat(newImg), objects);
 
-		if (num_rows(img) > 800) {
-			img_small.set_size(img.nr()/4,img.nc()/4);
-			resize_image(img, img_small, interpolate_nearest_neighbor());
-			std::lock_guard<std::mutex> lock(detector_mutex_);
-			rects = detector_(img_small);
-			img_resized = true;
-		} else {
-			std::lock_guard<std::mutex> lock(detector_mutex_);
-			rects = detector_(img);
+		if (!objects.empty()) {
+			rects.emplace_back(objects[0].x1, objects[0].y1, objects[0].x2, objects[0].y2);
 		}
 
 		// Short circuit.
@@ -106,12 +109,7 @@ public:
 
 		for (const auto& rect : rects) {
 			full_object_detection shape;
-			if (img_resized) {
-				rectangle new_rect = scale_rect(rect,4);
-				shape = sp_(img, new_rect);
-			} else {
-				shape = sp_(img, rect);
-			}
+			shape = sp_(img, rect);
 
 			shapes.push_back(shape);
 			matrix<rgb_pixel> face_chip;
@@ -147,6 +145,7 @@ private:
 	std::mutex detector_mutex_;
 	std::mutex net_mutex_;
 	std::shared_mutex samples_mutex_;
+	FaceDtct *faceDet_;
 	frontal_face_detector detector_;
 	shape_predictor sp_;
 	anet_type net_;
@@ -164,6 +163,31 @@ facerec* facerec_init(const char* model_dir) {
 	try {
 		FaceRec* cls = new FaceRec(model_dir);
 		rec->cls = (void*)cls;
+
+		// Face detection
+		const char *modeltypes[] =
+			{
+				"yolov8-lite-t",
+				"yolov8-lite-s"};
+
+		const int target_sizes[] =
+			{
+				640,
+				640};
+
+		const float mean_vals[][3] =
+			{
+				{127.f, 127.f, 127.f},
+			};
+
+		const float norm_vals[][3] =
+			{
+				{1 / 255.f, 1 / 255.f, 1 / 255.f},
+				{1 / 255.f, 1 / 255.f, 1 / 255.f},
+			};
+
+		cls->getFaceDet()->load(model_dir, modeltypes[0], target_sizes[0], mean_vals[0], norm_vals[0],
+								false);
 	} catch(serialization_error& e) {
 		rec->err_str = strdup(e.what());
 		rec->err_code = SERIALIZATION_ERROR;
@@ -171,6 +195,7 @@ facerec* facerec_init(const char* model_dir) {
 		rec->err_str = strdup(e.what());
 		rec->err_code = UNKNOWN_ERROR;
 	}
+
 	return rec;
 }
 void facerec_config(facerec* rec, unsigned long size, double padding, int jittering) {
