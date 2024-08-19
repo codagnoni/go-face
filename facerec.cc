@@ -84,7 +84,6 @@ public:
 	}
 
 	FaceDtct *getFaceDet() { return faceDet_; }
-	}
 
 	std::tuple<std::vector<rectangle>, std::vector<descriptor>, std::vector<full_object_detection>>
 	Recognize(const matrix<rgb_pixel>& img,int max_faces,int type) {
